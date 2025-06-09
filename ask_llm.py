@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Script pour interroger un LLM local via Ollama
 ===============================================

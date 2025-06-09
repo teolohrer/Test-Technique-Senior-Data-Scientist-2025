@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Test de vérification du LLM local via Ollama (avec uv)
 ======================================================
