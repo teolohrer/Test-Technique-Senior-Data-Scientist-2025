@@ -128,7 +128,7 @@ python ask_llm_rag.py "Impact environnemental du véhicule électrique" --verbos
 
 ---
 
-## 📝 Questions d'Exemple
+## 📝 Exemples de Questions
 
 Pour guider votre développement et vos tests, voici des questions représentatives :
 
@@ -200,6 +200,14 @@ wc -l data/corpus.csv
 - Implémenter la logique de citation des sources
 
 > **💡 Conseil :** Commencez simple et itérez. Un RAG basique qui fonctionne est préférable à un système complexe incomplet.
+
+---
+
+## ⚖️ Licence et Usage
+
+Ce test technique est fourni sous licence propriétaire restreinte. L'usage est limité à l'évaluation des candidats pour le poste de Senior Data Scientist NLP/GenAI chez La Mètis.
+
+Voir le fichier [LICENSE](LICENSE) pour les conditions complètes.
 
 ---
 

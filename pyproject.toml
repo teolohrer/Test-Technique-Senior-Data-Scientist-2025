@@ -2,8 +2,12 @@
 name = "test-technique-senior-data-scientist-2025"
 version = "0.1.0"
 description = "Test Technique - Senior Data Scientist - 2025"
+authors = [
+    {name = "La Mètis", email = "contact@la-metis.fr"}
+]
 readme = "README.md"
 requires-python = ">=3.9"
+license = {file = "LICENSE"}
 dependencies = [
     "colorama>=0.4.6",
     "requests>=2.32.3",
