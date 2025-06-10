@@ -12,7 +12,7 @@ if ! command -v ollama &> /dev/null; then
 fi
 
 # Téléchargement modèle
-ollama pull phi3:mini  # Modèle léger 2.3GB
+ollama pull phi3:instruct  # Modèle léger 2.3GB
 
 uv sync
 

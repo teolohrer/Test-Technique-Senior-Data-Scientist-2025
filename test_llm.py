@@ -126,7 +126,7 @@ class OllamaLLMTester:
 
                 if not models:
                     self.print_status("Aucun modèle installé", "warning")
-                    self.print_status("Installez un modèle : 'ollama pull phi3:mini'", "info")
+                    self.print_status("Installez un modèle : 'ollama pull phi3:instruct'", "info")
                     return []
 
                 # Affichage tableau des modèles
@@ -334,7 +334,7 @@ class OllamaLLMTester:
 # test_rag_simple.py
 import requests
 
-def query_llm(prompt, model="{self.available_models[0] if self.available_models else "phi3:mini"}"):
+def query_llm(prompt, model="{self.available_models[0] if self.available_models else "phi3:instruct"}"):
     """Interroge le LLM local via Ollama"""
     response = requests.post('http://localhost:11434/api/generate',
                            json={{'model': model, 'prompt': prompt, 'stream': False}})

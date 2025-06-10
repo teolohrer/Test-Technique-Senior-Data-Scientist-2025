@@ -71,7 +71,7 @@ class OllamaClient:
             model = self.get_default_model()
             if model is None:
                 raise ValueError(
-                    "Aucun modèle disponible. Installez un modèle avec 'ollama pull phi3:mini'"
+                    "Aucun modèle disponible. Installez un modèle avec 'ollama pull phi3:instruct'"
                 )
 
         # Préparation du payload
@@ -265,7 +265,7 @@ Exemples d'usage:
                 print(f"  {i}. {model}")
         else:
             print_warning("Aucun modèle installé")
-            print_info("Installez un modèle avec: ollama pull phi3:mini")
+            print_info("Installez un modèle avec: ollama pull phi3:instruct")
         sys.exit(0)
 
     # Vérification qu'au moins un modèle est disponible
@@ -273,7 +273,7 @@ Exemples d'usage:
         available_models = client.get_models()
         if not available_models:
             print_error("Aucun modèle disponible")
-            print_info("Installez un modèle avec: ollama pull phi3:mini")
+            print_info("Installez un modèle avec: ollama pull phi3:instruct")
             print_info("Ou listez les modèles disponibles avec: %(prog)s --list-models")
             sys.exit(1)
 
