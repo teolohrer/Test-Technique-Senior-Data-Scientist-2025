@@ -207,7 +207,7 @@ wc -l data/corpus.csv
 
 Ce test technique est fourni sous licence propriétaire restreinte. L'usage est limité à l'évaluation des candidats pour le poste de Senior Data Scientist NLP/GenAI chez La Mètis.
 
-Voir le fichier [LICENSE](LICENSE) pour les conditions complètes.
+Voir le fichier [LICENCE](LICENCE) pour les conditions complètes.
 
 ---
 
