@@ -15,9 +15,26 @@ import argparse
 import sys
 import time
 from typing import Any, Dict, Optional
+from tqdm import tqdm
+import random
+import warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 import requests
 from requests.exceptions import ConnectionError, RequestException, Timeout
+
+from bm25_retriever import BM25Retriever
+from clustering import hdbscan_clustering
+from process_data import load_data, prepare_chunks, prepare_paragraphs, prepare_sentences, prepare_sliding_paragraphs
+from question_expansion import QuestionExpansion
+from rerank import cross_encoder_rerank, rrf_fusion
+from clustering import hdbscan_clustering, kmeans_clustering
+from mmr import mmr
+
+from dense_retriever import DenseRetriever
+from prompts import format_rag_prompt
+
+from config import DATA_FILEPATH, MAX_CONTEXT_DOCS
 
 
 class OllamaClient:
@@ -54,7 +71,7 @@ class OllamaClient:
             return models[0]
         return None
 
-    def generate(self, prompt: str, model: str = None, **options) -> Dict[str, Any]:
+    def generate(self, prompt: str, model: Optional[str] = None, think: bool = False, **options) -> Dict[str, Any]:
         """
         Génère une réponse à partir d'un prompt
 
@@ -79,6 +96,7 @@ class OllamaClient:
             "model": model,
             "prompt": prompt,
             "stream": False,
+            "think": think,
             "options": {
                 "temperature": options.get("temperature", 0.7),
                 "top_p": options.get("top_p", 0.9),
@@ -216,8 +234,8 @@ Exemples d'usage:
     parser.add_argument(
         "--max-tokens",
         type=int,
-        default=1000,
-        help="Nombre maximum de tokens à générer (défaut: 1000)",
+        default=5000,
+        help="Nombre maximum de tokens à générer (défaut: 5000)",
     )
 
     parser.add_argument(
@@ -245,6 +263,10 @@ Exemples d'usage:
 
     if args.max_tokens < 1:
         print_error("Le nombre de tokens doit être positif")
+        sys.exit(1)
+    
+    if args.question.strip() == "":
+        print_error("La question ne peut pas être vide")
         sys.exit(1)
 
     # Initialisation du client
@@ -285,19 +307,159 @@ Exemples d'usage:
         print_info("Génération en cours...")
         print()
 
+    collection = load_data(DATA_FILEPATH, "paragraphes", data_prepare_func=prepare_paragraphs)
+    collection_chunks = load_data(DATA_FILEPATH, "chunks", data_prepare_func=prepare_chunks)
+    collection_sentences = load_data(DATA_FILEPATH, "sentences", data_prepare_func=prepare_sentences)
+
+    bm25 = BM25Retriever(collection)
+    bm25_chunks = BM25Retriever(collection_chunks)
+    dense_retriever = DenseRetriever(collection)
+    dense_chunks_retriever = DenseRetriever(collection_chunks)
+    dense_sentences_retriever = DenseRetriever(collection_sentences)
+    bm25_sentences = BM25Retriever(collection_sentences)
+
+    retrievers = [
+        bm25,
+        # bm25_chunks,
+        dense_retriever,
+        # dense_chunks_retriever,
+        # dense_sentences_retriever,
+    ]
+
+    sentence_retrievers = [
+        bm25_sentences,
+        dense_sentences_retriever,
+    ]
+
+    t0 = time.time()
+
+    t_start_question_expansion = time.time()
+    # Step -1 : Naive retrieval with sentenceretrievers on the original question
+    # to seed the question expansion
+    initial_contexts = []
+    n_initial_context = 50
+    for retriever in sentence_retrievers:
+        context = retriever.retrieve(args.question, k=n_initial_context)
+        initial_contexts.append(context)
+    initial_context = rrf_fusion(initial_contexts, top_k=n_initial_context)
+
+
+    # Step 0: Question expansion
+
+    question_expansion = QuestionExpansion(client, args.model)
+    questions = question_expansion.expand(args.question, initial_context=initial_context)
+    questions = questions[:10]  # max 10 questions to avoid too many calls
+
+    print_info(f"Temps d'expansion de la question: {(time.time() - t_start_question_expansion):.2f}s")
+    print_info(f"Questions reformulées ({len(questions)}): \n- {'\n- '.join(questions)}")
+
+
+    # Step 1: Retrieval
+    # For each question, retrieve from each retriever
+    t_start_retrieval = time.time()
+
+    contexts = []
+    context_by_question_by_retriever = {}
+    for question in questions:
+        context_by_question_by_retriever[question] = []
+        for retriever in retrievers:
+            context = retriever.retrieve(question, k=5*MAX_CONTEXT_DOCS)
+            context_by_question_by_retriever[question].append(context)
+            
+    
+    # Step 2: Fusion of all contexts
+    # We now have, for each question, a list of lists of contexts (one list per retriever)
+    # Flatten by retriever, rerank with rrf then cross-encoder, keep top 5*MAX_CONTEXT_DOCS
+    # RRF is OK here because we are scoring the same question
+
+    retrieve_size = 5*MAX_CONTEXT_DOCS
+
+    for question, list_of_contexts in context_by_question_by_retriever.items():
+        merged_context = rrf_fusion(list_of_contexts, top_k=retrieve_size)
+        contexts.append(merged_context)
+    
+    # We now have a list of contexts, one per question
+
+    context = rrf_fusion(contexts, top_k=retrieve_size)
+
+    # We could re-rank by document_score as well to balance sources
+    # context_by_source = sorted(context, key=lambda d: d["metadata"].get("document_score", 0), reverse=True)
+    # context = rrf_fusion([context, context_by_source], top_k=retrieve_size)
+
+    # We now have a single context with up to retrieve_size documents
+    # It should be balanced between questions and retrievers
+
+    print_info(f"Temps de récupération des documents: {(time.time() - t_start_retrieval):.2f}s")
+    print_info(f"Nombre de documents récupérés avant filtrage: {len(context)}")
+
+    t_start_clustering = time.time()
+
+
+    # We "pre-clustered" by using different retrievers and questions
+    # akin to a supervised clustering
+    # Now we can cluster unsupervised to diversify the context to help outliers
+
+    # clusters = hdbscan_clustering(collection, context, min_cluster_size=5)
+    # empirically better with kmeans here
+    clusters = kmeans_clustering(collection, context, n_clusters=6)
+
+    clustered_context = []
+
+    sorted_clusters = []
+    for cluster in clusters:
+        sorted_cluster = cross_encoder_rerank(cluster, args.question)
+        sorted_clusters.append(sorted_cluster)
+
+    clustered_context_sizes = [len(c) for c in sorted_clusters]
+    normalized_cluster_sizes = [s / sum(clustered_context_sizes) for s in clustered_context_sizes]
+    laplace_smoothing = 0.1
+    normalized_cluster_sizes = [(s + laplace_smoothing) / (1 + laplace_smoothing * len(normalized_cluster_sizes)) for s in normalized_cluster_sizes]
+    smoothed_cluster_sizes = [int(s * len(context)) + 1 for s in normalized_cluster_sizes]
+    smoothed_clusters = [cluster[:size] for cluster, size in zip(sorted_clusters, smoothed_cluster_sizes)]
+    # flatten
+    smoothed_clusters = [doc for cluster in smoothed_clusters for doc in cluster]
+    from random import shuffle
+    shuffle(smoothed_clusters)
+    
+    final_pool_size = MAX_CONTEXT_DOCS * 5
+    clustered_context = smoothed_clusters[:final_pool_size]
+    
+    context = clustered_context
+    print_info(f"Temps de clustering: {(time.time() - t_start_clustering):.2f}s")
+
+    t_start_mmr_ce_rerank = time.time()
+
+    context = mmr(collection, context, args.question, top_k=MAX_CONTEXT_DOCS*2, relevance_weight=0.8)
+    context = cross_encoder_rerank(context, args.question)[:MAX_CONTEXT_DOCS]
+
+    print_info(f"Temps de rerank MMR + cross-encoder: {(time.time() - t_start_mmr_ce_rerank):.2f}s")
+    
+
+    context = sorted(context, key=lambda d: d["metadata"].get("document_score", 0), reverse=False)
+
+    t_start_question_expansion = time.time()
     # Génération de la réponse
+    prompt = format_rag_prompt(context, args.question)
+    print("===")
+    print(prompt)
+    print("===")
+
     try:
         result = client.generate(
-            prompt=args.question,
+            prompt=prompt,
             model=args.model,
             temperature=args.temperature,
             max_tokens=args.max_tokens,
             top_p=args.top_p,
+            think=False,
         )
 
         # Affichage du résultat
         formatted_response = format_response(result, args.verbose)
+        print_info(f"Temps de génération de la réponse: {(time.time() - t_start_question_expansion):.2f}s")
+        t1 = time.time()
         print(formatted_response)
+        print_info(f"Temps total écoulé: {(t1-t0):.2f}s")
 
         # Code de sortie
         sys.exit(0 if result["success"] else 1)
