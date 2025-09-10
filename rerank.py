@@ -1,26 +1,39 @@
 from typing import Any
 from sentence_transformers import CrossEncoder
 
-from config import CROSS_ENCODER_MODEL, RRF_K
+from config import RAGConfig
+from defaults import RRF_K
 
+class CrossEncoderWrapper:
+    def __init__(self, model_name: str):
+        self.model = CrossEncoder(model_name)
+    
+    @staticmethod
+    def from_config(config: RAGConfig):
+        return CrossEncoderWrapper(model_name=config.cross_encoder_model)
 
-def rerank_cutoff_by_key(documents: list[dict], key: str="document_score", reverse: bool = True) -> list[dict]:
+    def score(self, query: str, document: str) -> float:
+        return float(self.model.predict([[query, document]])[0])
+    
+    def batch_score(self, query: str, documents: list[str]) -> list[float]:
+        pairs = [[query, doc] for doc in documents]
+        return [float(score) for score in self.model.predict(pairs)]
+    
+    def rank_documents(self, query: str, documents: list[dict], key: str="document") -> list[dict]:
+        if len(documents) == 0:
+            return documents
+
+        pairs = [[query, doc[key]] for doc in documents]
+        scores = self.model.predict(pairs)
+
+        for doc, score in zip(documents, scores):
+            doc["metadata"]["cross_encoder_score"] = float(score)
+
+        return sorted(documents, key=lambda d: d["metadata"].get("cross_encoder_score", 0), reverse=True)
+
+def rank_documents_by_key(documents: list[dict], key: str="document_score", reverse: bool = True) -> list[dict]:
     return sorted(documents, key=lambda d: d["metadata"].get(key, 0), reverse=reverse)
 
-def cross_encoder_rerank(documents: list[dict], query: str, model_name: str = CROSS_ENCODER_MODEL) -> list[dict]:
-
-    if len(documents) == 0:
-        return documents
-
-    cross_encoder = CrossEncoder(model_name)
-
-    pairs = [[query, doc["document"]] for doc in documents]
-    scores = cross_encoder.predict(pairs)
-
-    for doc, score in zip(documents, scores):
-        doc["metadata"]["cross_encoder_score"] = float(score)
-
-    return sorted(documents, key=lambda d: d["metadata"].get("cross_encoder_score", 0), reverse=True)
 
 def rrf_fusion(all_results: list, top_k=10):
     scores = {}

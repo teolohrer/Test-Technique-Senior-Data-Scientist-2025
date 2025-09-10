@@ -2,6 +2,11 @@
 import json
 import re
 from typing import Any
+from defaults import (
+    QUESTION_EXPANSION_TEMPERATURE, QUESTION_EXPANSION_MAX_TOKENS,
+    QUESTION_EXPANSION_TOP_P, QUESTION_EXPANSION_TRIES
+)
+from config import RAGConfig
 
 QUESTION_REFORMULATION_PROMPT = """
 Vous êtes un assistant d'extraction de mots-clés à partir de questions pour un système de RAG, en fonction d'un contexte donné. Un utilisateur vous fournit une question qui peut être vague, ambiguë, ou possèdant de mutliples sous-questions. À partir d'un contexte fourni, votre tâche est de diviser cette question en sous requêtes claires, précises et spécifiques, adaptées à une base de connaissances. Ces reformulations ciblent chacune une sous-partie différente et précise de la question originale en relation avec le contexte. Ces requêtes ne sont pas des questions, mais des phrases ou des expressions. 
@@ -20,27 +25,21 @@ Question originale :
 
 Requêtes de mots-clés, en liste JSON :
 """
-# QUESTION_REFORMULATION_PROMPT = """
-# Vous êtes un assistant d'extraction de mots-clés à partir de questions pour un système de RAG. Un utilisateur vous fournit une question qui peut être vague, ambiguë, ou possèdant de mutliples sous-questions. Votre tâche est de diviser cette question en sous-questions claires, précises et spécifiques, adaptées à une base de connaissances. Ces reformulations ciblent chacune une sous-partie différente et précise de la question originale.
-
-# Répondez sous la forme d'une liste de sous-questions intermédiaires, précises, en français, sous forme d'une liste JSON de chaînes, ordonnées par pertinence.
-
-
-# Question originale :
-# {question}
-
-# Sous-questions, en liste JSON :
-# """
 
 class QuestionExpansion:
-    def __init__(self, client: Any, model):
+    def __init__(self, client: Any, model, temperature=0.9, tries=3):
         self.client = client
         self.model = model
-        self.tries = 3
+        self.tries = tries
+        self.temperature = temperature
+
+    @staticmethod
+    def from_config(config: RAGConfig):
+        return QuestionExpansion(client=config.client, model=config.question_expansion_model, temperature=config.question_expansion_temperature, tries=QUESTION_EXPANSION_TRIES)
     
     def format_context(self, contexts: list[dict]) -> str:
         return "\n\n".join([f"[{c['id'][:8]}] {c['document']}" for c in contexts])
-
+    
     def expand(self, question: str, initial_context: list[dict]) -> list[str]:
         reformulations_prompt = QUESTION_REFORMULATION_PROMPT.format(question=question, context=self.format_context(initial_context))
         tries = self.tries
@@ -49,11 +48,12 @@ class QuestionExpansion:
                 reformulation_result = self.client.generate(
                     prompt=reformulations_prompt,
                     model=self.model,
-                    temperature=0.3,
-                    max_tokens=500,
-                    top_p=0.9,
+                    temperature=self.temperature,
+                    max_tokens=QUESTION_EXPANSION_MAX_TOKENS,
+                    top_p=QUESTION_EXPANSION_TOP_P,
                     think=False,
                 )
+
                 # use a regex to remove any non-json content before or after the json list
                 regex = r"(\[.*\])"
                 if "response" not in reformulation_result:
@@ -65,7 +65,6 @@ class QuestionExpansion:
                     raise ValueError("Aucune liste JSON trouvée dans la réponse")
 
                 stripped_response = match.group(1)
-                print(f"Réponse brute (re): {stripped_response}")
 
                 additional_questions = json.loads(stripped_response)
 
@@ -74,7 +73,6 @@ class QuestionExpansion:
                 if not all(isinstance(q, str) for q in additional_questions):
                     raise ValueError("Toutes les reformulations ne sont pas des chaînes de caractères")
 
-                # questions = [f"Contexte : {question} - Sujet : {q.strip()}" for q in additional_questions if q.strip()]
                 questions = [question] + additional_questions
                 break
             except (json.JSONDecodeError, ValueError) as e:

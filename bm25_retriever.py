@@ -15,9 +15,5 @@ class BM25Retriever:
         top_n_indices = doc_scores.argsort()[-k:][::-1]
         top_n_ids = [self.ids[i] for i in top_n_indices]
         results = self.collection.get(ids=top_n_ids)
-        # print(f"BM25 scores: {[doc_scores[i] for i in top_n_indices]}")
-        # print the docs with their scores
-        # for i in top_n_indices:
-        #     print(f"BM25 score: {doc_scores[i]} - Doc: {self.collection.get(ids=[self.ids[i]])['documents'][0][:100]}...")
 
         return [{"id": par_id, "document": doc, "metadata": meta} for par_id, doc, meta in zip(results["ids"], results["documents"], results["metadatas"])]

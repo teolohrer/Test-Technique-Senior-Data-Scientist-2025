@@ -1,23 +1,13 @@
 from typing import List
 import polars as pl
 from collections import defaultdict
-import os
 from tqdm import tqdm
 
 import chromadb
-from chromadb.utils import embedding_functions
 
-from bm25_retriever import BM25Retriever
-from dense_retriever import DenseRetriever
+from embedding import EmbeddingWrapper
+from config import RAGConfig
 
-from config import CHROMA_PERSIST, DATA_FILEPATH, EMBEDDING_MODEL
-
-
-def get_client_collection(persist, name):
-    if not os.path.exists(persist):
-        os.makedirs(persist, exist_ok=True)
-    client = chromadb.PersistentClient(path=persist)
-    return client, client.get_or_create_collection(name=name)
 
 def prepare_paragraphs(data_filepath: str):
     # "par_id","doc_id","document_url","document_date","document_netloc","document_title","paragraph_text","paragraph_order","paragraph_score","document_score"
@@ -30,7 +20,6 @@ def prepare_paragraphs(data_filepath: str):
     ids = [d["par_id"] for d in df_dicts]
     documents = [d["paragraph_text"] for d in df_dicts]
     metadatas = [{k: v for k, v in d.items() if k not in ["paragraph_text"]} for d in df_dicts]
-    # metadatas = sorted(metadatas, key=lambda m: (m["doc_id"], m["paragraph_order"]))
     # linking paragraphs
     for prev, cur in zip(metadatas, metadatas[1:]):
         if prev["doc_id"] == cur["doc_id"] and prev["paragraph_order"] + 1 == cur["paragraph_order"]:
@@ -72,7 +61,7 @@ def prepare_chunks(data_filepath: str, chunk_size: int = 500, overlap: int = 50)
         article_text = article["text"]
         article_meta = article["metadata"]
 
-        text_chunks = chunk_text(article_text, chunk_size, chunk_size-overlap)
+        text_chunks = chunk_text(article_text, chunk_size, overlap)
 
         for idx, chunk in enumerate(text_chunks):
             chunks.append(chunk)
@@ -103,6 +92,49 @@ def prepare_sentences(data_filepath: str):
             new_meta["par_id"] = f"s{id_}_{i}"
             new_meta["sentence_order"] = i
             new_metadatas.append(new_meta)
+    return new_ids, new_documents, new_metadatas
+
+def prepare_sliding_sentences(data_filepath: str, window_size: int = 3, overlap: int = 2):
+    ids, documents, metadatas = prepare_sentences(data_filepath)
+
+    # Build fast lookup tables
+    text_by_id = dict(zip(ids, documents))
+    metadata_by_id = {m["par_id"]: m for m in metadatas}
+
+    # Group sentences by document
+    sent_ids_by_doc = defaultdict(list)
+    for m in metadatas:
+        sent_ids_by_doc[m["doc_id"]].append(m["par_id"])
+
+    new_ids, new_documents, new_metadatas = [], [], []
+
+    for doc_id, sent_ids in sent_ids_by_doc.items():
+        # iterate with sliding window
+        step = window_size - overlap
+        for i in range(0, len(sent_ids), step):
+            window_sent_ids = sent_ids[i:i+window_size]
+            if not window_sent_ids:
+                continue
+
+            # build concatenated text
+            window_texts = [text_by_id[sid] for sid in window_sent_ids]
+            new_document = ". ".join(window_texts) + "."
+
+            # build unique id
+            new_id = "_".join(window_sent_ids)
+
+            # copy base metadata from the first sentence in the window
+            base_meta = metadata_by_id[window_sent_ids[0]].copy()
+            base_meta.pop("par_id", None)  # remove single par_id
+            base_meta.pop("sentence_order", None)  # remove order
+
+            # add new fields
+            base_meta["par_id"] = new_id
+
+            new_ids.append(new_id)
+            new_documents.append(new_document)
+            new_metadatas.append(base_meta)
+
     return new_ids, new_documents, new_metadatas
 
 
@@ -150,52 +182,34 @@ def prepare_sliding_paragraphs(data_filepath: str, window_size: int = 3, overlap
     return new_ids, new_documents, new_metadatas
 
 
-def insert_documents(ids, documents, metadatas, collection, chunk=10):
-    pbar = tqdm(total=len(documents), desc=f"Inserting documents ({collection.name})")
-    for i in range(0, len(documents), chunk):
-        collection.add(
-            ids=ids[i:i+chunk],
-            documents=documents[i:i+chunk],
-            metadatas=metadatas[i:i+chunk]
-        )
-        pbar.update(chunk)
-    pbar.close()
+class DataLoader:
 
+    def __init__(self, model_name: str, base_ollama_url: str, chroma_persist: str):
+        self.client = chromadb.PersistentClient(path=chroma_persist)
+        self.embedding_function = EmbeddingWrapper(model_name=model_name, base_url=base_ollama_url)
 
-def load_data(data_filepath: str, collection_name: str, data_prepare_func, force: bool=False) -> chromadb.Collection:
-    # Create the collection if it does not exist
-    client = chromadb.PersistentClient(path=CHROMA_PERSIST)
-    ollama_ef = embedding_functions.OllamaEmbeddingFunction(
-        url="http://localhost:11434",
-        model_name=EMBEDDING_MODEL
-    )
-    em = ollama_ef
-    collection = client.get_or_create_collection(name=collection_name, embedding_function=em)
+    def load_data(self, data_filepath: str, collection_name: str, data_prepare_func, force: bool=False) -> chromadb.Collection:
+        # Create the collection if it does not exist
+        collection = self.client.get_or_create_collection(name=collection_name, embedding_function=self.embedding_function.ef) # type: ignore
 
-    if force or collection.count() == 0:
-        ids, documents, metadatas = data_prepare_func(data_filepath)
-        insert_documents(ids, documents, metadatas, collection)
-    return collection
+        if force or collection.count() == 0:
+            ids, documents, metadatas = data_prepare_func(data_filepath)
+            self.insert_documents(ids, documents, metadatas, collection)
+        return collection
 
-
-
-
-if __name__ == "__main__":
-    collection = load_data(DATA_FILEPATH, "paragraphes", prepare_paragraphs)
-    dense_retriever = DenseRetriever(collection)
-    bm25 = BM25Retriever(collection)
-
-    dense_results = dense_retriever.retrieve("Voiture électrique", k=8)
-    sparse_results = bm25.retrieve("Voiture électrique", k=8)
-
-    if dense_results is not None:
-        print("Dense results:")
-        for result in dense_results:
-            print("---")
-            print(result)
-    if sparse_results is not None:
-        print("Sparse results:")
-        for result in sparse_results:
-            print("---")
-            print(result)
+    def insert_documents(self, ids, documents, metadatas, collection, chunk=50):
+        pbar = tqdm(total=len(documents), desc=f"Inserting documents ({collection.name})")
+        for i in range(0, len(documents), chunk):
+            collection.add(
+                ids=ids[i:i+chunk],
+                documents=documents[i:i+chunk],
+                metadatas=metadatas[i:i+chunk]
+            )
+            pbar.update(chunk)
+        pbar.close()
+    
+    
+    @staticmethod
+    def from_config(config: RAGConfig):
+        return DataLoader(model_name=config.embedding_model, base_ollama_url=config.base_ollama_url, chroma_persist=config.chroma_persist)
 
