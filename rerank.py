@@ -1,25 +1,28 @@
 from typing import Any
 from sentence_transformers import CrossEncoder
 
-from config import RAGConfig
+from config_manager import Config
 from defaults import RRF_K
+
 
 class CrossEncoderWrapper:
     def __init__(self, model_name: str):
         self.model = CrossEncoder(model_name)
-    
+
     @staticmethod
-    def from_config(config: RAGConfig):
+    def from_config(config: Config):
         return CrossEncoderWrapper(model_name=config.cross_encoder_model)
 
     def score(self, query: str, document: str) -> float:
         return float(self.model.predict([[query, document]])[0])
-    
+
     def batch_score(self, query: str, documents: list[str]) -> list[float]:
         pairs = [[query, doc] for doc in documents]
         return [float(score) for score in self.model.predict(pairs)]
-    
-    def rank_documents(self, query: str, documents: list[dict], key: str="document") -> list[dict]:
+
+    def rank_documents(
+        self, query: str, documents: list[dict], key: str = "document"
+    ) -> list[dict]:
         if len(documents) == 0:
             return documents
 
@@ -29,9 +32,14 @@ class CrossEncoderWrapper:
         for doc, score in zip(documents, scores):
             doc["metadata"]["cross_encoder_score"] = float(score)
 
-        return sorted(documents, key=lambda d: d["metadata"].get("cross_encoder_score", 0), reverse=True)
+        return sorted(
+            documents, key=lambda d: d["metadata"].get("cross_encoder_score", 0), reverse=True
+        )
 
-def rank_documents_by_key(documents: list[dict], key: str="document_score", reverse: bool = True) -> list[dict]:
+
+def rank_documents_by_key(
+    documents: list[dict], key: str = "document_score", reverse: bool = True
+) -> list[dict]:
     return sorted(documents, key=lambda d: d["metadata"].get(key, 0), reverse=reverse)
 
 

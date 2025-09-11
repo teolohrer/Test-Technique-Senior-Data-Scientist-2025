@@ -96,26 +96,20 @@ Quels sont les effets de l'usage intensif des réseaux sociaux sur les adolescen
 
 example_context = [
     {
-        'id': '1234abcd',
-        'metadata': {
-            'document_netloc': 'example1.com'
-        },
-        'document': "Selon un rapport publié par l'OMS, l'usage excessif des réseaux sociaux chez les adolescents entraîne une augmentation significative des troubles du sommeil et de la concentration. L'organisation recommande une limitation du temps d'écran à moins de deux heures quotidiennes."
+        "id": "1234abcd",
+        "metadata": {"document_netloc": "example1.com"},
+        "document": "Selon un rapport publié par l'OMS, l'usage excessif des réseaux sociaux chez les adolescents entraîne une augmentation significative des troubles du sommeil et de la concentration. L'organisation recommande une limitation du temps d'écran à moins de deux heures quotidiennes.",
     },
     {
-        'id': '5678efgh',
-        'metadata': {
-            'document_netloc': 'example2.org'
-        },
-        'document': "Le marché mondial des smartphones a enregistré une hausse de 8 % en 2024, portée par la demande accrue de modèles pliables. Les grands constructeurs asiatiques dominent toujours le secteur."
+        "id": "5678efgh",
+        "metadata": {"document_netloc": "example2.org"},
+        "document": "Le marché mondial des smartphones a enregistré une hausse de 8 % en 2024, portée par la demande accrue de modèles pliables. Les grands constructeurs asiatiques dominent toujours le secteur.",
     },
     {
-        'id': '90abijkl',
-        'metadata': {
-            'document_netloc': 'example.fr'
-        },
-        'document': "Une enquête menée en France auprès de 3 000 lycéens révèle que plus de la moitié se sentent dépendants à leurs téléphones. Les chercheurs soulignent que l'hyperconnexion a des répercussions sur la réussite scolaire et la santé mentale, mais qu'elle peut aussi favoriser la sociabilité en ligne."
-    }
+        "id": "90abijkl",
+        "metadata": {"document_netloc": "example.fr"},
+        "document": "Une enquête menée en France auprès de 3 000 lycéens révèle que plus de la moitié se sentent dépendants à leurs téléphones. Les chercheurs soulignent que l'hyperconnexion a des répercussions sur la réussite scolaire et la santé mentale, mais qu'elle peut aussi favoriser la sociabilité en ligne.",
+    },
 ]
 
 example_individual_analysis = """
@@ -158,27 +152,40 @@ Soyez extrêmement prudent de n'inclure uniquement que des informations présent
 """
 
 
-
 def _format_context(context: list[dict], separator: str = "\n\n\n") -> str:
     context_strings = []
     for c in context:
-        doc_id, netloc, date = c["metadata"].get("doc_id", "unknown"), c["metadata"].get("document_netloc", "unknown"), c["metadata"].get("document_date", "unknown")
+        doc_id, netloc, date = (
+            c["metadata"].get("doc_id", "unknown"),
+            c["metadata"].get("document_netloc", "unknown"),
+            c["metadata"].get("document_date", "unknown"),
+        )
         context_strings.append(f"[{doc_id[:8]} / {netloc} / {date}] {c['document']}")
     return separator.join(context_strings)
 
+
 RAG_PROMPT = RAG_PROMPT_FRENCH
+
 
 def _format_individual_analysis(source: dict, analysis: str) -> str:
     return f"[{source['id'][:8]} / {source['metadata']['document_netloc']}]\n{source['document']}\n\nAnalyse : {analysis}"
     # return f"[{source['id'][:8]} / {source['metadata']['document_netloc']}]\n\nAnalyse : {analysis}"
 
+
 def _format_analyses(analyses: list[tuple[dict, str]]) -> str:
-    return "\n\n".join([_format_individual_analysis(source, analysis=analysis) for source, analysis in analyses if "<ignore>" not in analysis])
+    return "\n\n".join(
+        [
+            _format_individual_analysis(source, analysis=analysis)
+            for source, analysis in analyses
+            if "<ignore>" not in analysis
+        ]
+    )
+
 
 def format_individual_analysis_prompt(source: dict, question: str) -> str:
     return RAG_PROMPT_INDIVIDUAL_ANALYSIS_FRENCH.format(
         source=f"[{source['id'][:8]} / {source['metadata']['document_netloc']}]\n{source['document']}",
-        question=question
+        question=question,
     )
 
 
@@ -188,11 +195,11 @@ def format_rag_prompt(context: list[dict], question: str) -> str:
         example_individual_analysis=example_individual_analysis,
         example_synthesis=example_synthesis,
         context=_format_context(context),
-        question=question
+        question=question,
     )
+
 
 def format_rag_prompt_synthesis(analyses: list[tuple[dict, str]], question: str) -> str:
     return RAG_PROMPT_SYNTHESIS_FRENCH.format(
-        question=question,
-        individual_analyses=_format_analyses(analyses)
+        question=question, individual_analyses=_format_analyses(analyses)
     )

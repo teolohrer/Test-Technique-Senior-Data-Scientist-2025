@@ -6,7 +6,7 @@ from tqdm import tqdm
 import chromadb
 
 from embedding import EmbeddingWrapper
-from config import RAGConfig
+from config_manager import Config
 
 
 def prepare_paragraphs(data_filepath: str):
@@ -22,13 +22,17 @@ def prepare_paragraphs(data_filepath: str):
     metadatas = [{k: v for k, v in d.items() if k not in ["paragraph_text"]} for d in df_dicts]
     # linking paragraphs
     for prev, cur in zip(metadatas, metadatas[1:]):
-        if prev["doc_id"] == cur["doc_id"] and prev["paragraph_order"] + 1 == cur["paragraph_order"]:
+        if (
+            prev["doc_id"] == cur["doc_id"]
+            and prev["paragraph_order"] + 1 == cur["paragraph_order"]
+        ):
             prev["next_par_id"] = cur["par_id"]
             cur["prev_par_id"] = prev["par_id"]
         else:
             prev["next_par_id"] = ""
             cur["prev_par_id"] = ""
     return ids, documents, metadatas
+
 
 def chunk_text(text: str, chunk_size: int, overlap: int) -> List[str]:
     chunks = []
@@ -41,6 +45,7 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> List[str]:
         start = end - overlap  # slide with overlap
     return chunks
 
+
 def prepare_chunks(data_filepath: str, chunk_size: int = 500, overlap: int = 50):
     ids, documents, metadatas = prepare_paragraphs(data_filepath)
     articles = {}
@@ -49,7 +54,11 @@ def prepare_chunks(data_filepath: str, chunk_size: int = 500, overlap: int = 50)
         if doc_id not in articles:
             articles[doc_id] = {
                 "text": [],
-                "metadata": {k: v for k, v in meta.items() if k not in ["par_id", "paragraph_order", "prev_par_id", "next_par_id"]}
+                "metadata": {
+                    k: v
+                    for k, v in meta.items()
+                    if k not in ["par_id", "paragraph_order", "prev_par_id", "next_par_id"]
+                },
             }
         articles[doc_id]["text"].append(text)
 
@@ -65,14 +74,16 @@ def prepare_chunks(data_filepath: str, chunk_size: int = 500, overlap: int = 50)
 
         for idx, chunk in enumerate(text_chunks):
             chunks.append(chunk)
-            chunk_metas.append({
-                **article_meta,
-                "chunk_id": f"{doc_id}_{idx}",
-                "chunk_index": idx,
-                "chunk_start": idx * (chunk_size - overlap),
-                "chunk_size": len(chunk),
-                "total_chunks": len(text_chunks),
-            })
+            chunk_metas.append(
+                {
+                    **article_meta,
+                    "chunk_id": f"{doc_id}_{idx}",
+                    "chunk_index": idx,
+                    "chunk_start": idx * (chunk_size - overlap),
+                    "chunk_size": len(chunk),
+                    "total_chunks": len(text_chunks),
+                }
+            )
 
     chunks_ids = [meta["chunk_id"] for meta in chunk_metas]
 
@@ -94,6 +105,7 @@ def prepare_sentences(data_filepath: str):
             new_metadatas.append(new_meta)
     return new_ids, new_documents, new_metadatas
 
+
 def prepare_sliding_sentences(data_filepath: str, window_size: int = 3, overlap: int = 2):
     ids, documents, metadatas = prepare_sentences(data_filepath)
 
@@ -112,7 +124,7 @@ def prepare_sliding_sentences(data_filepath: str, window_size: int = 3, overlap:
         # iterate with sliding window
         step = window_size - overlap
         for i in range(0, len(sent_ids), step):
-            window_sent_ids = sent_ids[i:i+window_size]
+            window_sent_ids = sent_ids[i : i + window_size]
             if not window_sent_ids:
                 continue
 
@@ -156,7 +168,7 @@ def prepare_sliding_paragraphs(data_filepath: str, window_size: int = 3, overlap
         # iterate with sliding window
         step = window_size - overlap
         for i in range(0, len(par_ids), step):
-            window_par_ids = par_ids[i:i+window_size]
+            window_par_ids = par_ids[i : i + window_size]
             if not window_par_ids:
                 continue
 
@@ -183,14 +195,18 @@ def prepare_sliding_paragraphs(data_filepath: str, window_size: int = 3, overlap
 
 
 class DataLoader:
-
     def __init__(self, model_name: str, base_ollama_url: str, chroma_persist: str):
         self.client = chromadb.PersistentClient(path=chroma_persist)
-        self.embedding_function = EmbeddingWrapper(model_name=model_name, base_url=base_ollama_url)
 
-    def load_data(self, data_filepath: str, collection_name: str, data_prepare_func, force: bool=False) -> chromadb.Collection:
+        self.embedding_function = EmbeddingWrapper(model_name=model_name, base_url=base_ollama_url)
+# 
+    def load_data(
+        self, data_filepath: str, collection_name: str, data_prepare_func, force: bool = False
+    ) -> chromadb.Collection:
         # Create the collection if it does not exist
-        collection = self.client.get_or_create_collection(name=collection_name, embedding_function=self.embedding_function.ef) # type: ignore
+        collection = self.client.get_or_create_collection(
+            name=collection_name, embedding_function=self.embedding_function.ef  # type: ignore
+        )
 
         if force or collection.count() == 0:
             ids, documents, metadatas = data_prepare_func(data_filepath)
@@ -201,15 +217,17 @@ class DataLoader:
         pbar = tqdm(total=len(documents), desc=f"Inserting documents ({collection.name})")
         for i in range(0, len(documents), chunk):
             collection.add(
-                ids=ids[i:i+chunk],
-                documents=documents[i:i+chunk],
-                metadatas=metadatas[i:i+chunk]
+                ids=ids[i : i + chunk],
+                documents=documents[i : i + chunk],
+                metadatas=metadatas[i : i + chunk],
             )
             pbar.update(chunk)
         pbar.close()
-    
-    
-    @staticmethod
-    def from_config(config: RAGConfig):
-        return DataLoader(model_name=config.embedding_model, base_ollama_url=config.base_ollama_url, chroma_persist=config.chroma_persist)
 
+    @staticmethod
+    def from_config(config: Config):
+        return DataLoader(
+            model_name=config.embedding_model,
+            base_ollama_url=config.ollama_base_url,
+            chroma_persist=config.chroma_persist,
+        )

@@ -1,14 +1,15 @@
-
 class DenseRetriever:
     def __init__(self, collection):
         self.collection = collection
 
     def retrieve(self, query, k: int):
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=k
-    )
-        return [{"id": par_id, "document": doc, "metadata": meta} for par_id, doc, meta in zip(results["ids"][0], results["documents"][0], results["metadatas"][0])]
+        results = self.collection.query(query_texts=[query], n_results=k)
+        return [
+            {"id": par_id, "document": doc, "metadata": meta}
+            for par_id, doc, meta in zip(
+                results["ids"][0], results["documents"][0], results["metadatas"][0]
+            )
+        ]
 
     def top_k_documents_with_prev_next(self, query, k: int):
         results = self.retrieve(query, k)

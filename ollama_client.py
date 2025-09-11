@@ -2,6 +2,7 @@ import time
 from typing import Any, Dict, Optional
 
 import warnings
+
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 
@@ -10,9 +11,13 @@ from requests.exceptions import ConnectionError, RequestException, Timeout
 
 
 from defaults import (
-    GENERATION_MODEL, MAX_TOKENS, OLLAMA_BASE_URL,
+    GENERATION_MODEL,
+    MAX_TOKENS,
+    OLLAMA_BASE_URL,
     OLLAMA_TIMEOUT,
-    OLLAMA_CONNECTION_TIMEOUT, TEMPERATURE, TOP_P,
+    OLLAMA_CONNECTION_TIMEOUT,
+    TEMPERATURE,
+    TOP_P,
 )
 
 
@@ -50,7 +55,9 @@ class OllamaClient:
             return models[0]
         return None
 
-    def generate(self, prompt: str, model: Optional[str] = None, think: bool = False, **options) -> Dict[str, Any]:
+    def generate(
+        self, prompt: str, model: Optional[str] = None, think: bool = False, **options
+    ) -> Dict[str, Any]:
         """
         Génère une réponse à partir d'un prompt
 

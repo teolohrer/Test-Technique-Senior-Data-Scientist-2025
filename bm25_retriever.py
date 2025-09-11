@@ -1,5 +1,6 @@
 from rank_bm25 import BM25Okapi
 
+
 class BM25Retriever:
     def __init__(self, collection):
         self.collection = collection
@@ -16,4 +17,7 @@ class BM25Retriever:
         top_n_ids = [self.ids[i] for i in top_n_indices]
         results = self.collection.get(ids=top_n_ids)
 
-        return [{"id": par_id, "document": doc, "metadata": meta} for par_id, doc, meta in zip(results["ids"], results["documents"], results["metadatas"])]
+        return [
+            {"id": par_id, "document": doc, "metadata": meta}
+            for par_id, doc, meta in zip(results["ids"], results["documents"], results["metadatas"])
+        ]

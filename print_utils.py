@@ -2,6 +2,7 @@ import sys
 import time
 from typing import Any, Dict
 
+
 def print_error(message: str):
     """Affiche un message d'erreur en rouge"""
     print(f"\033[91m❌ Erreur: {message}\033[0m", file=sys.stderr)
@@ -48,10 +49,11 @@ def format_response(result: Dict[str, Any], verbose: bool = False) -> str:
         # Mode simple
         return response_text
 
+
 def timing_decorator(func):
     def wrapper(self, *args, **kwargs):
-        config = getattr(self, 'config', None)
-        verbose = config and getattr(config, 'verbose', False)
+        config = getattr(self, "config", None)
+        verbose = config and getattr(config, "verbose", False)
         if verbose:
             print_info(f"Starting '{func.__name__}'...")
         start_time = time.time()
@@ -61,4 +63,5 @@ def timing_decorator(func):
         if verbose:
             print_info(f"Function '{func.__name__}' executed in {elapsed_time:.2f} seconds")
         return result
+
     return wrapper

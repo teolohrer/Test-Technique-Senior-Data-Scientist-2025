@@ -2,6 +2,7 @@
 EMBEDDING_MODEL = "nomic-embed-text:v1.5"
 # EMBEDDING_MODEL = "snowflake-arctic-embed2:568m"
 GENERATION_MODEL = "qwen3:8b"
+# GENERATION_MODEL = "phi3:instruct"
 # GENERATION_MODEL = "mistral:7b"
 QUESTION_EXPANSION_MODEL = "qwen3:8b"
 # QUESTION_EXPANSION_MODEL = "mistral:7b"
@@ -22,13 +23,13 @@ MAX_CONTEXT_DOCS = 10  # Final number of context documents to include for genera
 INITIAL_CONTEXT_SIZE = 50  # For question expansion seeding
 MAX_EXPANDED_QUESTIONS = 10
 SUBQUESTION_MAX_DOCUMENTS = 100  # per sub-question
-SUBQUESTION_FUSION_MAX_DOCUMENTS = 200  # after fusion of sub-questions
+SUBQUESTION_FUSION_MAX_DOCUMENTS = 100  # after fusion of sub-questions
 
 # Clustering Configuration
 KMEANS_N_CLUSTERS = 3
 HDBSCAN_MIN_CLUSTER_SIZE = 5
 CLUSTER_LAPLACE_SMOOTHING = 0.3
-CLUSTER_SAMPLE_SIZE = 100
+CLUSTER_SAMPLE_SIZE = 50
 
 # Reranking Configuration
 RRF_K = 60

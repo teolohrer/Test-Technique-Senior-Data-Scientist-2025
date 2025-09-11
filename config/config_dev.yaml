@@ -1,0 +1,37 @@
+# Development Configuration
+# =========================
+# More verbose settings for development and testing
+
+# === Models ===
+embedding_model: "nomic-embed-text:v1.5"
+generation_model: "qwen3:8b"
+question_expansion_model: "qwen3:8b"
+
+# === Infrastructure ===
+ollama_base_url: "http://localhost:11434"
+ollama_timeout: 180
+verbose: true
+
+# === LLM Generation ===
+temperature: 0.1
+max_tokens: 8000
+top_p: 0.8
+
+# === RAG & Retrieval ===
+max_context_docs: 10
+initial_context_size: 40
+max_expanded_questions: 10
+subquestion_max_documents: 120
+subquestion_fusion_max_documents: 250
+
+# === Clustering ===
+kmeans_n_clusters: 5
+cluster_sample_size: 120
+
+# === MMR ===
+mmr_relevance_weight: 0.7
+mmr_top_k: 60
+
+# === Question Expansion ===
+question_expansion_temperature: 0.8
+question_expansion_max_tokens: 600
